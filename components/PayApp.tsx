@@ -284,48 +284,48 @@ export default function PayRedLinkApp() {
   };
 
   // ========== MANUAL CHECK PAYMENT ==========
-const checkPaymentStatus = async () => {
-  if (!qrData?.reference) return;
+// const checkPaymentStatus = async () => {
+//   if (!qrData?.reference) return;
 
-  setCheckingPayment(true);
+//   setCheckingPayment(true);
 
-  try {
-    const res = await fetch(`https://api.tomassage.id/api/tripay/check-transaction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reference: qrData.reference })
-    });
+//   try {
+//     const res = await fetch(`https://api.tomassage.id/api/tripay/check-transaction`, {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify({ reference: qrData.reference })
+//     });
 
-    const data = await res.json();
-    console.log("CHECK RESULT:", data);
+//     const data = await res.json();
+//     console.log("CHECK RESULT:", data);
 
-    if (data.success && data.message === "Balance updated") {
-      // SALDO MASUK
-      setShowQRModal(false);
-      setQrData(null);
-      alert("🎉 Pembayaran berhasil! Saldo sudah masuk.");
-      fetchData(userId);
-    } 
-    else if (data.success && data.message === "Already processed") {
-      setShowQRModal(false);
-      setQrData(null);
-      alert("🎉 Sudah diproses sebelumnya.");
-      fetchData(userId);
-    }
-    else if (data.success && data.status === "PAID") {
-      alert("✔ Sudah dibayar tetapi saldo belum diproses.");
-    }
-    else {
-      alert("⏳ Pembayaran belum diterima.");
-    }
+//     if (data.success && data.message === "Balance updated") {
+//       // SALDO MASUK
+//       setShowQRModal(false);
+//       setQrData(null);
+//       alert("🎉 Pembayaran berhasil! Saldo sudah masuk.");
+//       fetchData(userId);
+//     } 
+//     else if (data.success && data.message === "Already processed") {
+//       setShowQRModal(false);
+//       setQrData(null);
+//       alert("🎉 Sudah diproses sebelumnya.");
+//       fetchData(userId);
+//     }
+//     else if (data.success && data.status === "PAID") {
+//       alert("✔ Sudah dibayar tetapi saldo belum diproses.");
+//     }
+//     else {
+//       alert("⏳ Pembayaran belum diterima.");
+//     }
 
-  } catch (err) {
-    console.error("CHECK ERROR:", err);
-    alert("Gagal cek pembayaran.");
-  }
+//   } catch (err) {
+//     console.error("CHECK ERROR:", err);
+//     alert("Gagal cek pembayaran.");
+//   }
 
-  setCheckingPayment(false);
-};
+//   setCheckingPayment(false);
+// };
 
 
   // ========== COPY QR STRING ==========
@@ -920,18 +920,7 @@ const checkPaymentStatus = async () => {
             </div>
 
             <div className="space-y-2">
-              <button
-                onClick={checkPaymentStatus}
-                disabled={checkingPayment}
-                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition">
-                {checkingPayment ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-5 h-5" />
-                )}
-                {checkingPayment ? "Mengecek..." : "Cek Status Pembayaran"}
-              </button>
-
+            
               <button
                 onClick={copyQRString}
                 className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition">
