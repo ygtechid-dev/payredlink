@@ -284,31 +284,49 @@ export default function PayRedLinkApp() {
   };
 
   // ========== MANUAL CHECK PAYMENT ==========
-  const checkPaymentStatus = async () => {
-    if (!qrData?.reference) return;
-    
-    setCheckingPayment(true);
-    try {
-      const { data: tx } = await supabase
-        .from("pay_transactions")
-        .select("status")
-        .eq("tripay_reference", qrData.reference)
-        .single();
+const checkPaymentStatus = async () => {
+  if (!qrData?.reference) return;
 
-      if (tx?.status === "PAID") {
-        setShowQRModal(false);
-        setQrData(null);
-        alert("✅ Pembayaran berhasil! Saldo sudah masuk.");
-        fetchData(userId);
-      } else {
-        alert("⏳ Pembayaran belum diterima. Silakan scan QR code terlebih dahulu.");
-      }
-    } catch (err) {
-      console.error("Check error:", err);
-      alert("Gagal cek status pembayaran");
+  setCheckingPayment(true);
+
+  try {
+    const res = await fetch(`https://api.tomassage.id/api/tripay/check-transaction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference: qrData.reference })
+    });
+
+    const data = await res.json();
+    console.log("CHECK RESULT:", data);
+
+    if (data.success && data.message === "Balance updated") {
+      // SALDO MASUK
+      setShowQRModal(false);
+      setQrData(null);
+      alert("🎉 Pembayaran berhasil! Saldo sudah masuk.");
+      fetchData(userId);
+    } 
+    else if (data.success && data.message === "Already processed") {
+      setShowQRModal(false);
+      setQrData(null);
+      alert("🎉 Sudah diproses sebelumnya.");
+      fetchData(userId);
     }
-    setCheckingPayment(false);
-  };
+    else if (data.success && data.status === "PAID") {
+      alert("✔ Sudah dibayar tetapi saldo belum diproses.");
+    }
+    else {
+      alert("⏳ Pembayaran belum diterima.");
+    }
+
+  } catch (err) {
+    console.error("CHECK ERROR:", err);
+    alert("Gagal cek pembayaran.");
+  }
+
+  setCheckingPayment(false);
+};
+
 
   // ========== COPY QR STRING ==========
   const copyQRString = () => {
@@ -588,7 +606,7 @@ export default function PayRedLinkApp() {
             </button>
 
             <button
-              disabled={balance < 50000}
+              disabled={balance < 10000}
               onClick={() => setShowWithdrawModal(true)}
               className="bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all active:scale-95 disabled:opacity-50">
               <ArrowDownToLine className="w-6 h-6" />
@@ -949,7 +967,7 @@ export default function PayRedLinkApp() {
 
             <h2 className="text-xl font-bold">Tarik Dana</h2>
             <p className="text-sm text-gray-500 mb-6">
-              Minimal Rp 50.000 • Diproses H+1 jam 14.00
+              Minimal Rp 10.000 • Diproses H+1 jam 14.00
             </p>
 
             {/* Fee Info */}
