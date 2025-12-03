@@ -19,6 +19,7 @@ import {
   History,
   X,
   Copy,
+  Copy,
   ExternalLink,
   RefreshCw,
   AlertCircle,
@@ -284,48 +285,48 @@ export default function PayRedLinkApp() {
   };
 
   // ========== MANUAL CHECK PAYMENT ==========
-// const checkPaymentStatus = async () => {
-//   if (!qrData?.reference) return;
+const checkPaymentStatus = async () => {
+  if (!qrData?.reference) return;
 
-//   setCheckingPayment(true);
+  setCheckingPayment(true);
 
-//   try {
-//     const res = await fetch(`https://api.tomassage.id/api/tripay/check-transaction`, {
-//       method: "POST",
-//       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({ reference: qrData.reference })
-//     });
+  try {
+    const res = await fetch(`https://api.tomassage.id/api/tripay/check-transaction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference: qrData.reference })
+    });
 
-//     const data = await res.json();
-//     console.log("CHECK RESULT:", data);
+    const data = await res.json();
+    console.log("CHECK RESULT:", data);
 
-//     if (data.success && data.message === "Balance updated") {
-//       // SALDO MASUK
-//       setShowQRModal(false);
-//       setQrData(null);
-//       alert("🎉 Pembayaran berhasil! Saldo sudah masuk.");
-//       fetchData(userId);
-//     } 
-//     else if (data.success && data.message === "Already processed") {
-//       setShowQRModal(false);
-//       setQrData(null);
-//       alert("🎉 Sudah diproses sebelumnya.");
-//       fetchData(userId);
-//     }
-//     else if (data.success && data.status === "PAID") {
-//       alert("✔ Sudah dibayar tetapi saldo belum diproses.");
-//     }
-//     else {
-//       alert("⏳ Pembayaran belum diterima.");
-//     }
+    if (data.success && data.message === "Balance updated") {
+      // SALDO MASUK
+      setShowQRModal(false);
+      setQrData(null);
+      alert("🎉 Pembayaran berhasil! Saldo sudah masuk.");
+      fetchData(userId);
+    } 
+    else if (data.success && data.message === "Already processed") {
+      setShowQRModal(false);
+      setQrData(null);
+      alert("🎉 Sudah diproses sebelumnya.");
+      fetchData(userId);
+    }
+    else if (data.success && data.status === "PAID") {
+      alert("✔ Sudah dibayar tetapi saldo belum diproses.");
+    }
+    else {
+      alert("⏳ Pembayaran belum diterima.");
+    }
 
-//   } catch (err) {
-//     console.error("CHECK ERROR:", err);
-//     alert("Gagal cek pembayaran.");
-//   }
+  } catch (err) {
+    console.error("CHECK ERROR:", err);
+    alert("Gagal cek pembayaran.");
+  }
 
-//   setCheckingPayment(false);
-// };
+  setCheckingPayment(false);
+};
 
 
   // ========== COPY QR STRING ==========
@@ -337,44 +338,66 @@ export default function PayRedLinkApp() {
   };
 
   // ========== CREATE WITHDRAWAL (WITH Rp 3K + Rp 3K FOR NON-MANDIRI/BCA) ==========
-  const createWithdrawal = async () => {
-    const { amount, bank_name, account_number, account_holder } = withdrawForm;
+ // ========== CREATE WITHDRAWAL (WITH FEE DISTRIBUTION) ==========
+const createWithdrawal = async () => {
+  const { amount, bank_name, account_number, account_holder } = withdrawForm;
 
-    if (!amount || !bank_name || !account_number || !account_holder) {
-      return alert("Lengkapi semua form penarikan");
+  if (!amount || !bank_name || !account_number || !account_holder) {
+    return alert("Lengkapi semua form penarikan");
+  }
+
+  const withdrawAmount = parseFloat(amount);
+
+  if (withdrawAmount < 50000)
+    return alert("Minimal tarik dana Rp 50.000");
+
+  if (withdrawAmount > balance)
+    return alert("Saldo tidak cukup");
+
+  setWithdrawing(true);
+
+  try {
+    // 💰 CALCULATE FEES
+    const baseFee = 3000;
+    const bankUpper = bank_name.toUpperCase();
+    const isMandiriOrBCA = bankUpper.includes("MANDIRI") || bankUpper.includes("BCA");
+    const extraFee = isMandiriOrBCA ? 0 : 3000;
+    const totalAdminFee = baseFee + extraFee;
+    const totalTransfer = withdrawAmount - totalAdminFee;
+
+    if (totalTransfer <= 0) {
+      return alert(`Saldo tidak cukup!\nBiaya admin: ${formatIDR(totalAdminFee)}`);
     }
 
-    const withdrawAmount = parseFloat(amount);
+    // 1️⃣ GET REFERRER INFO
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("referrer_user_id, username")
+      .eq("user_id", userId)
+      .single();
 
-    if (withdrawAmount < 50000)
-      return alert("Minimal tarik dana Rp 50.000");
+    const referrerUserId = profileData?.referrer_user_id;
+    const currentUsername = profileData?.username;
 
-    if (withdrawAmount > balance)
-      return alert("Saldo tidak cukup");
+    // 2️⃣ CALCULATE FEE DISTRIBUTION
+    let referralAmount = 0;
+    let platformAmount = 0;
 
-    setWithdrawing(true);
+    if (referrerUserId) {
+      referralAmount = 2000;
+      platformAmount = Math.max(0, totalAdminFee - referralAmount);
+    } else {
+      platformAmount = totalAdminFee;
+    }
 
-    try {
-      // 💰 CALCULATE FEES
-      const baseFee = 3000; // Rp 3.000 base fee
-      
-      // Check if bank is Mandiri or BCA
-      const bankUpper = bank_name.toUpperCase();
-      const isMandiriOrBCA = bankUpper.includes("MANDIRI") || bankUpper.includes("BCA");
-      const extraFee = isMandiriOrBCA ? 0 : 3000; // Rp 3k for non-Mandiri/BCA
-      
-      const totalAdminFee = baseFee + extraFee;
-      const totalTransfer = withdrawAmount - totalAdminFee;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(14, 0, 0, 0);
 
-      if (totalTransfer <= 0) {
-        return alert(`Saldo tidak cukup!\nBiaya admin: ${formatIDR(totalAdminFee)}`);
-      }
-
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(14, 0, 0, 0);
-
-      const { error: err1 } = await supabase.from("pay_withdrawals").insert([
+    // 3️⃣ INSERT WITHDRAWAL
+    const { data: newWithdrawal, error: err1 } = await supabase
+      .from("pay_withdrawals")
+      .insert([
         {
           user_id: userId,
           username,
@@ -388,76 +411,175 @@ export default function PayRedLinkApp() {
           scheduled_date: tomorrow.toISOString(),
           is_auto: false,
         }
-      ]);
+      ])
+      .select()
+      .single();
 
-      if (err1) throw err1;
+    if (err1) throw err1;
 
-      // 📱 SEND WHATSAPP NOTIFICATION
-      try {
-        const waMessage = `🔔 *PENARIKAN DANA BARU*\n\n` +
-          `Jumlah: ${formatIDR(withdrawAmount)}\n` +
-          `Biaya Admin: ${formatIDR(totalAdminFee)}\n` +
-          (extraFee > 0 ? `  - Biaya dasar: ${formatIDR(baseFee)}\n  - Biaya bank lain: ${formatIDR(extraFee)}\n` : `  - Biaya dasar: ${formatIDR(baseFee)}\n`) +
-          `Transfer: ${formatIDR(totalTransfer)}\n\n` +
-          `*DETAIL REKENING:*\n` +
-          `Bank: ${bank_name}\n` +
-          `No Rek: ${account_number}\n` +
-          `A/N: ${account_holder}\n\n` +
-          `*USER INFO:*\n` +
-          `Username: ${username}\n` +
-          `Email: ${profile?.users?.email || '-'}\n` +
-          `Phone: ${profile?.phone || '-'}\n\n` +
-          `⏰ Jadwal: ${tomorrow.toLocaleString('id-ID')}`;
+    // 4️⃣ DISTRIBUTE FEE TO REFERRER (jika ada)
+    if (referrerUserId && referralAmount > 0) {
+      // Get referrer balance
+      const { data: refBalance } = await supabase
+        .from("user_balance")
+        .select("current_balance")
+        .eq("user_id", referrerUserId)
+        .maybeSingle();
 
-        const waRes = await fetch("https://api.fonnte.com/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "ScSuD6CbrZakniT79zut",
-          },
-          body: JSON.stringify({
-            target: "085121158088",
-            message: waMessage,
-          }),
-        });
-        
-        if (waRes.ok) {
-          console.log("✅ WhatsApp notification sent");
-        }
-      } catch (waErr) {
-        console.error("❌ WA Error:", waErr);
-        // Don't block withdrawal if WA fails
+      if (!refBalance) {
+        // Create balance if not exists
+        await supabase.from("user_balance").insert([{
+          user_id: referrerUserId,
+          current_balance: referralAmount
+        }]);
+      } else {
+        const oldBalance = refBalance.current_balance || 0;
+        const newBalance = oldBalance + referralAmount;
+
+        // Update referrer balance
+        await supabase
+          .from("user_balance")
+          .update({
+            current_balance: newBalance,
+            last_updated: new Date().toISOString()
+          })
+          .eq("user_id", referrerUserId);
+
+        // Record balance history untuk referrer
+        await supabase.from("pay_balance_history").insert([{
+          user_id: referrerUserId,
+          type: "CREDIT",
+          amount: referralAmount,
+          balance_before: oldBalance,
+          balance_after: newBalance,
+          description: `Komisi referral dari penarikan @${currentUsername}`,
+          reference_id: newWithdrawal.id,
+          reference_type: "WITHDRAWAL_REFERRAL"
+        }]);
       }
 
-      alert(
-        `✅ Permintaan penarikan berhasil!\n\n` +
-        `Jumlah: ${formatIDR(withdrawAmount)}\n` +
-        `Biaya Admin: ${formatIDR(totalAdminFee)}\n` +
-        (extraFee > 0 ? `  • Biaya dasar: ${formatIDR(baseFee)}\n  • Biaya bank lain: ${formatIDR(extraFee)}\n` : '') +
-        `Transfer: ${formatIDR(totalTransfer)}\n\n` +
-        `Bank: ${bank_name}\n` +
-        `Rekening: ${account_number}\n` +
-        `A/N: ${account_holder}\n\n` +
-        `⏰ Diproses besok jam 14.00`
-      );
-
-      setShowWithdrawModal(false);
-      setWithdrawForm({
-        amount: "",
-        bank_name: "",
-        account_number: "",
-        account_holder: "",
-      });
-
-      fetchData(userId);
-
-    } catch (err) {
-      console.error("WITHDRAW ERROR:", err);
-      alert(err.message);
+      // Record referral earning
+      await supabase.from("referral_earnings").insert([{
+        referrer_user_id: referrerUserId,
+        referred_user_id: userId,
+        withdrawal_id: newWithdrawal.id,
+        amount: referralAmount,
+        type: "REFERRAL",
+        description: `Komisi referral dari penarikan @${currentUsername}`
+      }]);
     }
 
-    setWithdrawing(false);
-  };
+    // 5️⃣ DISTRIBUTE FEE TO PLATFORM
+    if (platformAmount > 0) {
+      // Get platform balance
+      const { data: platformBalance } = await supabase
+        .from("balance_redlink")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const oldPlatformBalance = platformBalance?.current_balance || 0;
+      const newPlatformBalance = oldPlatformBalance + platformAmount;
+      const totalEarned = (platformBalance?.total_earned || 0) + platformAmount;
+
+      if (platformBalance) {
+        // Update existing
+        await supabase
+          .from("balance_redlink")
+          .update({
+            current_balance: newPlatformBalance,
+            total_earned: totalEarned,
+            last_updated: new Date().toISOString()
+          })
+          .eq("id", platformBalance.id);
+      } else {
+        // Create new
+        await supabase.from("balance_redlink").insert([{
+          current_balance: platformAmount,
+          total_earned: platformAmount
+        }]);
+      }
+
+      // Record platform earning
+      await supabase.from("referral_earnings").insert([{
+        referred_user_id: userId,
+        withdrawal_id: newWithdrawal.id,
+        amount: platformAmount,
+        type: "PLATFORM",
+        description: `Fee platform dari penarikan @${currentUsername}`
+      }]);
+    }
+
+    // 📱 SEND WHATSAPP NOTIFICATION
+    try {
+      const waMessage = `🔔 *PENARIKAN DANA BARU*\n\n` +
+        `Jumlah: ${formatIDR(withdrawAmount)}\n` +
+        `Biaya Admin: ${formatIDR(totalAdminFee)}\n` +
+        (extraFee > 0 ? `  - Biaya dasar: ${formatIDR(baseFee)}\n  - Biaya bank lain: ${formatIDR(extraFee)}\n` : `  - Biaya dasar: ${formatIDR(baseFee)}\n`) +
+        `Transfer: ${formatIDR(totalTransfer)}\n\n` +
+        `*DETAIL REKENING:*\n` +
+        `Bank: ${bank_name}\n` +
+        `No Rek: ${account_number}\n` +
+        `A/N: ${account_holder}\n\n` +
+        `*USER INFO:*\n` +
+        `Username: ${username}\n` +
+        `Email: ${profile?.users?.email || '-'}\n` +
+        `Phone: ${profile?.phone || '-'}\n\n` +
+        `*FEE DISTRIBUTION:*\n` +
+        (referrerUserId ? `  - Referral: ${formatIDR(referralAmount)}\n` : '') +
+        `  - Platform: ${formatIDR(platformAmount)}\n\n` +
+        `⏰ Jadwal: ${tomorrow.toLocaleString('id-ID')}`;
+
+      const waRes = await fetch("https://api.fonnte.com/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "ScSuD6CbrZakniT79zut",
+        },
+        body: JSON.stringify({
+          target: "085121158088",
+          message: waMessage,
+        }),
+      });
+      
+      if (waRes.ok) {
+        console.log("✅ WhatsApp notification sent");
+      }
+    } catch (waErr) {
+      console.error("❌ WA Error:", waErr);
+    }
+
+    alert(
+      `✅ Permintaan penarikan berhasil!\n\n` +
+      `Jumlah: ${formatIDR(withdrawAmount)}\n` +
+      `Biaya Admin: ${formatIDR(totalAdminFee)}\n` +
+      (extraFee > 0 ? `  • Biaya dasar: ${formatIDR(baseFee)}\n  • Biaya bank lain: ${formatIDR(extraFee)}\n` : '') +
+      `Transfer: ${formatIDR(totalTransfer)}\n\n` +
+      `Bank: ${bank_name}\n` +
+      `Rekening: ${account_number}\n` +
+      `A/N: ${account_holder}\n\n` +
+      (referrerUserId ? `💰 Referral bonus: ${formatIDR(referralAmount)} telah dikirim\n` : '') +
+      `⏰ Diproses besok jam 14.00`
+    );
+
+    setShowWithdrawModal(false);
+    setWithdrawForm({
+      amount: "",
+      bank_name: "",
+      account_number: "",
+      account_holder: "",
+    });
+
+    fetchData(userId);
+
+  } catch (err) {
+    console.error("WITHDRAW ERROR:", err);
+    alert(err.message);
+  }
+
+  setWithdrawing(false);
+};
 
   // ========== CALCULATE WITHDRAWAL FEE PREVIEW ==========
   const getWithdrawalFeePreview = () => {
@@ -727,55 +849,117 @@ export default function PayRedLinkApp() {
             </div>
           </div>
         )}
+{activeTab === "profile" && (
+  <div>
+    <h2 className="text-2xl font-bold mb-6">Profil Saya</h2>
 
-        {activeTab === "profile" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-6">Profil Saya</h2>
+    {/* REFERRAL SECTION */}
+    <div className="bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 rounded-3xl p-6 shadow-xl mb-4 text-white">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center">
+          <TrendingUp className="w-6 h-6" />
+        </div>
+        <div>
+          <h3 className="font-bold text-lg">Program Referral</h3>
+          <p className="text-white/80 text-sm">Ajak teman, dapat bonus!</p>
+        </div>
+      </div>
 
-            <div className="bg-white rounded-3xl p-6 shadow-sm mb-4">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-3xl font-bold">
-                  {profile?.users?.display_name?.charAt(0)}
-                </div>
+      <div className="bg-white/10 backdrop-blur rounded-2xl p-4 mb-3">
+        <p className="text-white/80 text-xs mb-2">Link Referral Kamu</p>
+        <div className="flex items-center gap-2">
+          <input 
+            type="text" 
+            value={`${typeof window !== 'undefined' ? window.location.origin : ''}/login?ref=${profile?.referral_code || ''}`}
+            readOnly
+            className="flex-1 bg-white/20 backdrop-blur text-white rounded-xl px-3 py-2 text-sm font-mono"
+          />
+          <button 
+            onClick={() => {
+              const link = `${window.location.origin}/login?ref=${profile?.referral_code}`;
+              navigator.clipboard.writeText(link);
+              alert('✅ Link referral disalin!');
+            }}
+            className="bg-white/20 hover:bg-white/30 backdrop-blur text-white px-4 py-2 rounded-xl transition-all active:scale-95">
+            <Copy className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
-                <div>
-                  <h3 className="text-xl font-bold">{profile?.users?.display_name}</h3>
-                  <p className="text-sm text-gray-600">{profile?.users?.email}</p>
-                  <p className="text-xs text-gray-400">@{username}</p>
-                </div>
-              </div>
+      <div className="bg-white/10 backdrop-blur rounded-2xl p-4">
+        <p className="text-sm font-semibold mb-2">💰 Cara Dapat Bonus:</p>
+        <ul className="text-sm space-y-1 text-white/90">
+          <li>• Share link referral ke teman</li>
+          <li>• Teman daftar pakai link kamu</li>
+          <li>• Setiap teman tarik dana, kamu dapat <b>Rp 2.000</b></li>
+          <li>• Bonus langsung masuk ke saldo!</li>
+        </ul>
+      </div>
+    </div>
 
-              <div className="space-y-3">
-                <div className="flex justify-between py-3 border-b border-gray-100">
-                  <span className="text-gray-600">Nomor HP</span>
-                  <span className="font-semibold">{profile?.phone || "-"}</span>
-                </div>
+    {/* PROFILE INFO */}
+    <div className="bg-white rounded-3xl p-6 shadow-sm mb-4">
+      <div className="flex items-center gap-4 mb-6">
+        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-3xl font-bold">
+          {profile?.avatar_url ? (
+            <img 
+              src={profile.avatar_url} 
+              alt="Avatar" 
+              className="w-full h-full rounded-full object-cover"
+            />
+          ) : (
+            profile?.users?.display_name?.charAt(0) || username?.charAt(0)?.toUpperCase()
+          )}
+        </div>
 
-                <div className="flex justify-between py-3 border-b border-gray-100">
-                  <span className="text-gray-600">Status Akun</span>
-                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
-                    Verified
-                  </span>
-                </div>
+        <div>
+          <h3 className="text-xl font-bold">{profile?.users?.display_name || profile?.full_name}</h3>
+          <p className="text-sm text-gray-600">{profile?.users?.email}</p>
+          <p className="text-xs text-gray-400">@{username}</p>
+        </div>
+      </div>
 
-                <div className="flex justify-between py-3">
-                  <span className="text-gray-600">Bergabung</span>
-                  <span className="font-semibold">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString("id-ID") : '-'}</span>
-                </div>
-              </div>
-            </div>
+      <div className="space-y-3">
+        <div className="flex justify-between py-3 border-b border-gray-100">
+          <span className="text-gray-600">Nomor HP</span>
+          <span className="font-semibold">{profile?.phone || "-"}</span>
+        </div>
 
-            <button
-              onClick={() => {
-                localStorage.clear();
-                location.href = "/";
-              }}
-              className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2">
-              <LogOut className="w-5 h-5" />
-              Logout
-            </button>
-          </div>
-        )}
+        <div className="flex justify-between py-3 border-b border-gray-100">
+          <span className="text-gray-600">Kode Referral</span>
+          <span className="font-semibold font-mono text-purple-600">
+            {profile?.referral_code || "-"}
+          </span>
+        </div>
+
+        <div className="flex justify-between py-3 border-b border-gray-100">
+          <span className="text-gray-600">Status Akun</span>
+          <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
+            Verified
+          </span>
+        </div>
+
+        <div className="flex justify-between py-3">
+          <span className="text-gray-600">Bergabung</span>
+          <span className="font-semibold">
+            {profile?.created_at ? new Date(profile.created_at).toLocaleDateString("id-ID") : '-'}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {/* LOGOUT BUTTON */}
+    <button
+      onClick={() => {
+        localStorage.clear();
+        location.href = "/";
+      }}
+      className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-700 transition-all active:scale-95">
+      <LogOut className="w-5 h-5" />
+      Logout
+    </button>
+  </div>
+)}
       </div>
 
       {/* BOTTOM NAV */}
@@ -920,7 +1104,18 @@ export default function PayRedLinkApp() {
             </div>
 
             <div className="space-y-2">
-            
+              <button
+                onClick={checkPaymentStatus}
+                disabled={checkingPayment}
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition">
+                {checkingPayment ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-5 h-5" />
+                )}
+                {checkingPayment ? "Mengecek..." : "Cek Status Pembayaran"}
+              </button>
+
               <button
                 onClick={copyQRString}
                 className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition">

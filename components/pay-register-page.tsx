@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { auth, googleProvider } from "@/lib/firebase";
 import { supabase } from "@/lib/supabase";
 import { signInWithPopup } from "firebase/auth";
@@ -8,6 +8,8 @@ import { Wallet, Loader2, User, Mail, Phone, ArrowRight, Chrome } from "lucide-r
 
 export default function PayRegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
   const [formData, setFormData] = useState({
     username: "",
     displayName: "",
@@ -17,7 +19,45 @@ export default function PayRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+
+    useEffect(() => {
+    const refCode = searchParams.get('ref');
+    if (refCode) {
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 30);
+      document.cookie = `referral_code=${refCode}; expires=${expires.toUTCString()}; path=/`;
+      localStorage.setItem('referral_code', refCode);
+      console.log('✅ Referral code saved:', refCode);
+    }
+  }, [searchParams]);
+
+
+   // 🔹 HELPER: Generate Referral Code
+  const generateReferralCode = () => {
+    return `REF${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+  };
+
+  // 🔹 HELPER: Get Referrer User ID
+  const getReferrerUserId = async (referralCode) => {
+    if (!referralCode) return null;
+    
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("referral_code", referralCode)
+        .maybeSingle();
+      
+      return data?.user_id || null;
+    } catch (err) {
+      console.error("Error getting referrer:", err);
+      return null;
+    }
+  };
+
   // 🔹 REGISTER DENGAN GOOGLE
+  
+  // 🔹 UPDATE handleGoogleRegister
   const handleGoogleRegister = async () => {
     setGoogleLoading(true);
     try {
@@ -25,7 +65,6 @@ export default function PayRegisterPage() {
       const user = result.user;
       const { uid, email, displayName, photoURL } = user;
 
-      // 1️⃣ Simpan/update user di tabel users
       const { data: userData, error: userError } = await supabase
         .from("users")
         .upsert(
@@ -43,40 +82,51 @@ export default function PayRegisterPage() {
       if (userError) throw userError;
       const userId = userData.id;
 
-      // 2️⃣ Cek apakah sudah punya profil
-      const { data: existingProfile } = await supabase
+      const { data: profile } = await supabase
         .from("profiles")
         .select("username")
         .eq("user_id", userId)
         .maybeSingle();
 
-      // Kalau sudah ada profil, redirect ke login
-      if (existingProfile) {
+      if (profile) {
         alert("✅ Akun sudah terdaftar! Silakan login.");
         router.push("/login");
         return;
       }
 
-      // 3️⃣ Save pending data untuk complete registration
+      // 🎯 GET REFERRAL CODE FROM COOKIE
+      const referralCodeFromCookie = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('referral_code='))
+        ?.split('=')[1] || localStorage.getItem('referral_code');
+
+      const referrerUserId = await getReferrerUserId(referralCodeFromCookie);
+      const userReferralCode = generateReferralCode();
+
+      console.log('🔗 Referral Info:', {
+        cookie: referralCodeFromCookie,
+        referrerUserId,
+        newCode: userReferralCode
+      });
+
       localStorage.setItem("pendingUserID", userId);
       localStorage.setItem("email", email || "");
       localStorage.setItem("displayName", displayName || "");
-      
-      // Auto-fill form
-      setFormData({
-        ...formData,
-        displayName: displayName || "",
-        email: email || "",
-      });
+      localStorage.setItem("photoURL", photoURL || "");
+      localStorage.setItem("referrer_user_id", referrerUserId || "");
+      localStorage.setItem("user_referral_code", userReferralCode);
 
-      alert("✅ Google berhasil terhubung! Lengkapi data dibawah untuk melanjutkan.");
+      router.push("/register");
     } catch (err) {
-      console.error("❌ Google register failed:", err);
-      alert("Register gagal: " + err.message);
+      console.error("❌ Google login failed:", err);
+      alert("Login gagal: " + err.message);
     } finally {
       setGoogleLoading(false);
     }
   };
+
+  
+
 
   // 🔹 COMPLETE REGISTRATION
   const handleCompleteRegistration = async () => {

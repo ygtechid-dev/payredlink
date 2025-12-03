@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { auth, googleProvider } from "@/lib/firebase";
 import { supabase } from "@/lib/supabase";
 import { signInWithPopup } from "firebase/auth";
@@ -8,10 +8,24 @@ import { Wallet, Loader2, Mail, Lock, ArrowRight, Chrome } from "lucide-react";
 
 export default function PayLoginPage() {
   const router = useRouter();
+    const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+
+  useEffect(() => {
+    const refCode = searchParams.get('ref');
+    if (refCode) {
+      // Set cookie 30 hari
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 30);
+      document.cookie = `referral_code=${refCode}; expires=${expires.toUTCString()}; path=/`;
+      localStorage.setItem('referral_code', refCode);
+      console.log('✅ Referral code saved:', refCode);
+    }
+  }, [searchParams]);
 
   // 🔹 LOGIN DENGAN GOOGLE
   const handleGoogleLogin = async () => {
