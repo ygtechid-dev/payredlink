@@ -1,5 +1,6 @@
 // app/login/page.tsx
 import PayLogin from "@/components/pay-login-page";
+import { Suspense } from "react";
 
 export const metadata = {
   title: "Login - PAY-RedLink",
@@ -7,5 +8,12 @@ export const metadata = {
 };
 
 export default function LoginPage() {
-  return <PayLogin />;
+  return(
+ <Suspense fallback={<div className="p-10 text-center">Loading...</div>}>
+        <PayLogin />
+      </Suspense>
+  )
+
+     
+
 }

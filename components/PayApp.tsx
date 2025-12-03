@@ -19,7 +19,6 @@ import {
   History,
   X,
   Copy,
-  Copy,
   ExternalLink,
   RefreshCw,
   AlertCircle,

@@ -1,5 +1,6 @@
 // app/register/page.tsx
 import PayRegister from "@/components/pay-register-page";
+import { Suspense } from "react";
 
 export const metadata = {
   title: "Daftar - PAY-RedLink",
@@ -7,5 +8,9 @@ export const metadata = {
 };
 
 export default function RegisterPage() {
-  return <PayRegister />;
+   return(
+   <Suspense fallback={<div className="p-10 text-center">Loading...</div>}>
+          <PayRegister />
+        </Suspense>
+    )
 }
